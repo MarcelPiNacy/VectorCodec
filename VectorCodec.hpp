@@ -39,10 +39,18 @@ namespace VectorCodec
 		return value_count / 2 + value_count * 4;
 	}
 
-	// Compresses a float array, storing the result in "out".
+	/*
+	 * Compresses a float array, storing the result in "out".
+	 * - "values" must be aligned to a 32-byte boundary.
+	*/
 	size_t	Encode(const float* VECTOR_CODEC_RESTRICT values, size_t value_count, uint8_t* VECTOR_CODEC_RESTRICT out) noexcept;
 	
-	// Decompresses a float array, storing the result in "out".
+	/*
+	 * Decompresses a float array, storing the result in "out".
+	 * - "begin" must be aligned to a 32-byte boundary.
+	 * - "out" must be aligned to a 32-byte boundary.
+	 * - The size of the output array must be a multiple of 8.
+	*/
 	void	Decode(const uint8_t* VECTOR_CODEC_RESTRICT begin, const uint8_t* VECTOR_CODEC_RESTRICT end, size_t value_count, float* VECTOR_CODEC_RESTRICT out) noexcept;
 }
 #endif
