@@ -51,6 +51,12 @@ namespace VectorCodec
 
 #ifdef VECTOR_CODEC_IMPLEMENTATION
 #include <cstring>
+
+#if defined(_DEBUG) || !defined(NDEBUG)
+#include <cassert>
+#define VECTOR_CODEC_INVARIANT assert
+#endif
+
 #if defined(__clang__) || defined(__GNUC__)
 #include <immintrin.h>
 #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
@@ -61,7 +67,9 @@ namespace VectorCodec
 #define VECTOR_CODEC_INLINE_ALWAYS __attribute__((always_inline))
 #define VECTOR_CODEC_CLZ_U32(MASK) __builtin_clz((MASK))
 #define VECTOR_CODEC_UNLIKELY_IF(CONDITION) if (__builtin_expect((CONDITION), 0))
+#ifndef VECTOR_CODEC_INVARIANT
 #define VECTOR_CODEC_INVARIANT __builtin_assume
+#endif
 #else
 #include <intrin.h>
 #include <Windows.h>
@@ -73,7 +81,9 @@ namespace VectorCodec
 #define VECTOR_CODEC_INLINE_ALWAYS __forceinline
 #define VECTOR_CODEC_CLZ_U32(MASK) __lzcnt((MASK))
 #define VECTOR_CODEC_UNLIKELY_IF(CONDITION) if ((CONDITION))
+#ifndef VECTOR_CODEC_INVARIANT
 #define VECTOR_CODEC_INVARIANT __assume
+#endif
 #endif
 
 namespace VectorCodec
@@ -113,6 +123,7 @@ namespace VectorCodec
 
 	size_t Encode(const float* VECTOR_CODEC_RESTRICT values, size_t value_count, uint8_t* VECTOR_CODEC_RESTRICT out) noexcept
 	{
+		VECTOR_CODEC_INVARIANT(((size_t)values & 31) == 0);
 		const __m256i one_vec = _mm256_set1_epi32(1);
 		const __m256i two_vec = _mm256_set1_epi32(2);
 		const __m256i three_vec = _mm256_set1_epi32(3);
@@ -180,7 +191,7 @@ namespace VectorCodec
 
 	void Decode(const uint8_t* VECTOR_CODEC_RESTRICT data, size_t value_count, float* VECTOR_CODEC_RESTRICT out) noexcept
 	{
-		VECTOR_CODEC_INVARIANT((size_t)out & 31);
+		VECTOR_CODEC_INVARIANT(((size_t)out & 31) == 0);
 		const __m128i one_vec16 = _mm_set1_epi16(1);
 		const __m128i three_vec16 = _mm_set1_epi16(3);
 		const __m128i four_vec16 = _mm_set1_epi16(4);
