@@ -36,13 +36,13 @@ namespace VectorCodec
 	// Returns the size in bytes of a compressed float array in the worst case.
 	constexpr size_t UpperBound(size_t value_count) noexcept
 	{
-		return value_count / 2 + value_count * 4;
+		return (value_count + 1) / 2 + value_count * 4;
 	}
 
-	// Compresses a float array, storing the result in "out". "values" must be aligned to a 32-byte boundary.
+	// Compresses a float array, storing the result in "out".
 	size_t	Encode(const float* VECTOR_CODEC_RESTRICT values, size_t value_count, uint8_t* VECTOR_CODEC_RESTRICT out) noexcept;
 	
-	// Decompresses a float array, storing the result in "out". "begin" and "out" must be aligned to a 32-byte boundary.
+	// Decompresses a float array, storing the result in "out".
 	void	Decode(const uint8_t* VECTOR_CODEC_RESTRICT begin, size_t value_count, float* VECTOR_CODEC_RESTRICT out) noexcept;
 }
 #endif
@@ -123,7 +123,6 @@ namespace VectorCodec
 
 	size_t Encode(const float* VECTOR_CODEC_RESTRICT values, size_t value_count, uint8_t* VECTOR_CODEC_RESTRICT out) noexcept
 	{
-		VECTOR_CODEC_INVARIANT(((size_t)values & 31) == 0);
 		const __m256i one_vec = _mm256_set1_epi32(1);
 		const __m256i two_vec = _mm256_set1_epi32(2);
 		const __m256i three_vec = _mm256_set1_epi32(3);
@@ -136,14 +135,14 @@ namespace VectorCodec
 		alignas(32) int32_t lookup[LOOKUP_SIZE] = {};
 		__m256i a, b, l, t, i, prior, xprior;
 		uint32_t* out_headers = (uint32_t*)out;
-		out += value_count / 2;
+		out += (value_count + 1) / 2;
 		prior = xprior = i = _mm256_setzero_si256();
 		do
 		{
 			VECTOR_CODEC_UNLIKELY_IF(end - values < 8)
 				(void)memcpy(&a, values, (end - values) << 2);
 			else
-				a = _mm256_load_si256((const __m256i*)values);
+				a = _mm256_loadu_si256((const __m256i*)values);
 			b = a;
 			a = _mm256_sub_epi32(a, prior);
 			prior = b;
@@ -186,12 +185,11 @@ namespace VectorCodec
 			values += 8;
 		} while (values < end);
 		_mm256_zeroall();
-		return ((size_t)(out - out_begin) + 31) & (~(size_t)31);
+		return out - out_begin;
 	}
 
 	void Decode(const uint8_t* VECTOR_CODEC_RESTRICT data, size_t value_count, float* VECTOR_CODEC_RESTRICT out) noexcept
 	{
-		VECTOR_CODEC_INVARIANT(((size_t)out & 31) == 0);
 		const __m128i one_vec16 = _mm_set1_epi16(1);
 		const __m128i three_vec16 = _mm_set1_epi16(3);
 		const __m128i four_vec16 = _mm_set1_epi16(4);
@@ -200,13 +198,13 @@ namespace VectorCodec
 		const __m256i modmask_vec32 = _mm256_set1_epi32(LOOKUP_SIZE - 1);
 		const __m256i tzc_shift_vec32 = _mm256_set_epi32(30, 28, 26, 24, 22, 20, 18, 16);
 		const uint32_t* in_headers = (const uint32_t*)data;
-		data += value_count / 2;
+		data += (value_count + 1) / 2;
 		const uint32_t* in_headers_end = (const uint32_t*)data;
 		alignas(32) int32_t lookup[LOOKUP_SIZE] = {};
 		__m256i a, b, i, xprior, prior;
 		__m128i l, l2;
 		xprior = prior = i = _mm256_setzero_si256();
-		do
+		while (true)
 		{
 			uint32_t header = VECTOR_CODEC_BSWAP_IF_BE(*in_headers);
 			++in_headers;
@@ -234,10 +232,15 @@ namespace VectorCodec
 			i = _mm256_and_si256(_mm256_xor_si256(a, _mm256_srli_epi32(a, HASH_SHIFT)), modmask_vec32);
 			xprior = _mm256_i32gather_epi32(lookup, i, 4);
 			a = _mm256_add_epi32(a, prior);
-			_mm256_store_si256((__m256i*)out, a);
+			VECTOR_CODEC_UNLIKELY_IF(value_count < 8)
+				break;
+			_mm256_storeu_si256((__m256i*)out, a);
 			prior = a;
+			value_count -= 8;
 			out += 8;
-		} while (in_headers != in_headers_end);
+		}
+		VECTOR_CODEC_UNLIKELY_IF(value_count != 0)
+			(void)memcpy(out, &a, value_count << 2);
 		_mm256_zeroall();
 	}
 }
