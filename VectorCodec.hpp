@@ -89,7 +89,7 @@ namespace VectorCodec
 namespace VectorCodec
 {
 	constexpr uint32_t LOOKUP_SIZE = 256;
-	constexpr uint8_t HASH_SHIFT = 16;
+	constexpr uint8_t HASH_SHIFT = 20;
 
 	VECTOR_CODEC_INLINE_ALWAYS static __m128i PrefixSum16x8(__m128i v) noexcept
 	{
@@ -176,11 +176,9 @@ namespace VectorCodec
 			l = _mm256_sllv_epi32(l, lzc_shift_vec);
 			t = _mm256_sllv_epi32(t, tzc_shift_vec);
 			l = _mm256_or_si256(l, t);
-			*out_headers = VECTOR_CODEC_BSWAP_IF_BE(
-				(uint32_t)_mm256_extract_epi32(l, 0) | (uint32_t)_mm256_extract_epi32(l, 1) |
-				(uint32_t)_mm256_extract_epi32(l, 2) | (uint32_t)_mm256_extract_epi32(l, 3) |
-				(uint32_t)_mm256_extract_epi32(l, 4) | (uint32_t)_mm256_extract_epi32(l, 5) |
-				(uint32_t)_mm256_extract_epi32(l, 6) | (uint32_t)_mm256_extract_epi32(l, 7));
+			l = _mm256_or_si256(l, _mm256_srli_si256(l, 8));
+			l = _mm256_or_si256(l, _mm256_srli_epi64(l, 32));
+			*out_headers = VECTOR_CODEC_BSWAP_IF_BE((uint32_t)_mm256_extract_epi32(l, 0) | (uint32_t)_mm256_extract_epi32(l, 4));
 			++out_headers;
 			values += 8;
 		} while (values < end);
