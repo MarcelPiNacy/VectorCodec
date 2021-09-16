@@ -39,19 +39,11 @@ namespace VectorCodec
 		return value_count / 2 + value_count * 4;
 	}
 
-	/*
-	 * Compresses a float array, storing the result in "out".
-	 * - "values" must be aligned to a 32-byte boundary.
-	*/
+	// Compresses a float array, storing the result in "out". "values" must be aligned to a 32-byte boundary.
 	size_t	Encode(const float* VECTOR_CODEC_RESTRICT values, size_t value_count, uint8_t* VECTOR_CODEC_RESTRICT out) noexcept;
 	
-	/*
-	 * Decompresses a float array, storing the result in "out".
-	 * - "begin" must be aligned to a 32-byte boundary.
-	 * - "out" must be aligned to a 32-byte boundary.
-	 * - The size of the output array must be a multiple of 8.
-	*/
-	void	Decode(const uint8_t* VECTOR_CODEC_RESTRICT begin, const uint8_t* VECTOR_CODEC_RESTRICT end, size_t value_count, float* VECTOR_CODEC_RESTRICT out) noexcept;
+	// Decompresses a float array, storing the result in "out". "begin" and "out" must be aligned to a 32-byte boundary.
+	void	Decode(const uint8_t* VECTOR_CODEC_RESTRICT begin, size_t value_count, float* VECTOR_CODEC_RESTRICT out) noexcept;
 }
 #endif
 
@@ -83,6 +75,7 @@ namespace VectorCodec
 #define VECTOR_CODEC_UNLIKELY_IF(CONDITION) if ((CONDITION))
 #define VECTOR_CODEC_INVARIANT __assume
 #endif
+
 namespace VectorCodec
 {
 	constexpr uint32_t LOOKUP_SIZE = 256;
@@ -185,7 +178,7 @@ namespace VectorCodec
 		return ((size_t)(out - out_begin) + 31) & (~(size_t)31);
 	}
 
-	void Decode(const uint8_t* VECTOR_CODEC_RESTRICT begin, const uint8_t* VECTOR_CODEC_RESTRICT end, size_t value_count, float* VECTOR_CODEC_RESTRICT out) noexcept
+	void Decode(const uint8_t* VECTOR_CODEC_RESTRICT data, size_t value_count, float* VECTOR_CODEC_RESTRICT out) noexcept
 	{
 		VECTOR_CODEC_INVARIANT((size_t)out & 31);
 		const __m128i one_vec16 = _mm_set1_epi16(1);
@@ -195,9 +188,9 @@ namespace VectorCodec
 		const __m256i three_vec32 = _mm256_set1_epi32(3);
 		const __m256i modmask_vec32 = _mm256_set1_epi32(LOOKUP_SIZE - 1);
 		const __m256i tzc_shift_vec32 = _mm256_set_epi32(30, 28, 26, 24, 22, 20, 18, 16);
-		const uint32_t* in_headers = (const uint32_t*)begin;
-		begin += value_count / 2;
-		const uint32_t* in_headers_end = (const uint32_t*)begin;
+		const uint32_t* in_headers = (const uint32_t*)data;
+		data += value_count / 2;
+		const uint32_t* in_headers_end = (const uint32_t*)data;
 		alignas(32) int32_t lookup[LOOKUP_SIZE] = {};
 		__m256i a, b, i, xprior, prior;
 		__m128i l, l2;
@@ -212,8 +205,8 @@ namespace VectorCodec
 			l = _mm_sub_epi16(four_vec16, l);
 			l2 = PrefixSum16x8(l);
 			b = _mm256_cvtepi16_epi32(_mm_slli_si128(l2, 2));
-			a = _mm256_i32gather_epi32((const int*)begin, b, 1);
-			begin += _mm_extract_epi16(l2, 7);
+			a = _mm256_i32gather_epi32((const int*)data, b, 1);
+			data += _mm_extract_epi16(l2, 7);
 			b = _mm256_sub_epi32(_mm256_sllv_epi32(one_vec32, _mm256_slli_epi32(_mm256_cvtepi16_epi32(l), 3)), one_vec32);
 			a = _mm256_and_si256(a, b);
 			b = _mm256_and_si256(_mm256_srlv_epi32(_mm256_set1_epi32(header), tzc_shift_vec32), three_vec32);
