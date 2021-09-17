@@ -57,6 +57,7 @@ namespace VectorCodec
 #if defined(_DEBUG) || !defined(NDEBUG)
 #include <cassert>
 #define VECTOR_CODEC_INVARIANT assert
+#define VECTOR_CODEC_INLINE_ALWAYS
 #endif
 
 #if defined(__clang__) || defined(__GNUC__)
@@ -66,7 +67,9 @@ namespace VectorCodec
 #else
 #define VECTOR_CODEC_BSWAP_IF_BE(VALUE) (VALUE)
 #endif
+#ifndef VECTOR_CODEC_INLINE_ALWAYS
 #define VECTOR_CODEC_INLINE_ALWAYS __attribute__((always_inline))
+#endif
 #define VECTOR_CODEC_UNLIKELY_IF(CONDITION) if (__builtin_expect((CONDITION), 0))
 #ifndef VECTOR_CODEC_INVARIANT
 #define VECTOR_CODEC_INVARIANT __builtin_assume
@@ -80,7 +83,9 @@ namespace VectorCodec
 #else
 #define VECTOR_CODEC_BSWAP_IF_BE(VALUE) (VALUE)
 #endif
+#ifndef VECTOR_CODEC_INLINE_ALWAYS
 #define VECTOR_CODEC_INLINE_ALWAYS __forceinline
+#endif
 #define VECTOR_CODEC_UNLIKELY_IF(CONDITION) if ((CONDITION))
 #ifndef VECTOR_CODEC_INVARIANT
 #define VECTOR_CODEC_INVARIANT __assume
