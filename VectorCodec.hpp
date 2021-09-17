@@ -91,52 +91,25 @@ namespace VectorCodec
 	constexpr uint32_t LOOKUP_SIZE = 256;
 	constexpr uint8_t HASH_SHIFT = 24;
 
-	VECTOR_CODEC_INLINE_ALWAYS static __m128i PrefixSum16x8(__m128i v) noexcept
-	{
-		v = _mm_add_epi16(_mm_slli_si128(v, 2), v);
-		v = _mm_add_epi16(_mm_slli_si128(v, 4), v);
-		v = _mm_add_epi16(_mm_slli_si128(v, 8), v);
-		return v;
-	}
-
-	VECTOR_CODEC_INLINE_ALWAYS static __m256i CTZB32x8(__m256i v) noexcept
-	{
-		__m256i r = _mm256_set1_epi32(32);
-		v = _mm256_andnot_si256(_mm256_sub_epi32(v, _mm256_set1_epi32(1)), v);
-		r = _mm256_sub_epi32(r, _mm256_andnot_si256(_mm256_cmpeq_epi32(v, _mm256_setzero_si256()), _mm256_set1_epi32(1)));
-		r = _mm256_sub_epi32(r, _mm256_andnot_si256(_mm256_cmpeq_epi32(_mm256_and_si256(v, _mm256_set1_epi32(0x0000ffff)), _mm256_setzero_si256()), _mm256_set1_epi32(16)));
-		r = _mm256_sub_epi32(r, _mm256_andnot_si256(_mm256_cmpeq_epi32(_mm256_and_si256(v, _mm256_set1_epi32(0x00ff00ff)), _mm256_setzero_si256()), _mm256_set1_epi32(8)));
-		r = _mm256_sub_epi32(r, _mm256_andnot_si256(_mm256_cmpeq_epi32(_mm256_and_si256(v, _mm256_set1_epi32(0x0f0f0f0f)), _mm256_setzero_si256()), _mm256_set1_epi32(4)));
-		r = _mm256_sub_epi32(r, _mm256_andnot_si256(_mm256_cmpeq_epi32(_mm256_and_si256(v, _mm256_set1_epi32(0x33333333)), _mm256_setzero_si256()), _mm256_set1_epi32(2)));
-		r = _mm256_sub_epi32(r, _mm256_andnot_si256(_mm256_cmpeq_epi32(_mm256_and_si256(v, _mm256_set1_epi32(0x55555555)), _mm256_setzero_si256()), _mm256_set1_epi32(1)));
-		return _mm256_srli_epi32(r, 3);
-	}
-
-	VECTOR_CODEC_INLINE_ALWAYS static __m256i CLZB32x8(__m256i v) noexcept
-	{
-		return _mm256_srli_epi32(_mm256_set_epi32(
-			VECTOR_CODEC_CLZ(_mm256_extract_epi32(v, 7)), VECTOR_CODEC_CLZ(_mm256_extract_epi32(v, 6)),
-			VECTOR_CODEC_CLZ(_mm256_extract_epi32(v, 5)), VECTOR_CODEC_CLZ(_mm256_extract_epi32(v, 4)),
-			VECTOR_CODEC_CLZ(_mm256_extract_epi32(v, 3)), VECTOR_CODEC_CLZ(_mm256_extract_epi32(v, 2)),
-			VECTOR_CODEC_CLZ(_mm256_extract_epi32(v, 1)), VECTOR_CODEC_CLZ(_mm256_extract_epi32(v, 0))), 3);
-	}
-
 	size_t Encode(const float* VECTOR_CODEC_RESTRICT values, size_t value_count, uint8_t* VECTOR_CODEC_RESTRICT out) noexcept
 	{
+		const __m256i zero_vec = _mm256_setzero_si256();
 		const __m256i one_vec = _mm256_set1_epi32(1);
 		const __m256i two_vec = _mm256_set1_epi32(2);
 		const __m256i three_vec = _mm256_set1_epi32(3);
 		const __m256i four_vec = _mm256_set1_epi32(4);
+		const __m256i eight_vec = _mm256_set1_epi32(8);
+		const __m256i sixteen_vec = _mm256_set1_epi32(16);
 		const __m256i modmask_vec = _mm256_set1_epi32(LOOKUP_SIZE - 1);
 		const __m256i lzc_shift_vec = _mm256_set_epi32(14, 12, 10, 8, 6, 4, 2, 0);
 		const __m256i tzc_shift_vec = _mm256_set_epi32(30, 28, 26, 24, 22, 20, 18, 16);
 		const float* const end = values + value_count;
 		const uint8_t* const out_begin = out;
-		alignas(32) int32_t lookup[LOOKUP_SIZE] = {};
+		alignas(64) int32_t lookup[LOOKUP_SIZE] = {};
 		__m256i a, b, l, t, i, prior, xprior;
 		uint32_t* out_headers = (uint32_t*)out;
 		out += (value_count + 1) / 2;
-		prior = xprior = i = _mm256_setzero_si256();
+		prior = xprior = i = zero_vec;
 		do
 		{
 			VECTOR_CODEC_UNLIKELY_IF(end - values < 8)
@@ -157,11 +130,22 @@ namespace VectorCodec
 			i = _mm256_and_si256(_mm256_xor_si256(a, _mm256_srli_epi32(a, HASH_SHIFT)), modmask_vec);
 			a = _mm256_xor_si256(a, xprior);
 			xprior = _mm256_i32gather_epi32(lookup, i, 4);
-			b = a;
-			t = CTZB32x8(a);
+			b = _mm256_andnot_si256(_mm256_sub_epi32(a, one_vec), a);
+			t = _mm256_set1_epi32(32);
+			t = _mm256_sub_epi32(t, _mm256_andnot_si256(_mm256_cmpeq_epi32(b, zero_vec), one_vec));
+			t = _mm256_sub_epi32(t, _mm256_andnot_si256(_mm256_cmpeq_epi32(_mm256_and_si256(b, _mm256_set1_epi32(0x0000ffff)), zero_vec), sixteen_vec));
+			t = _mm256_sub_epi32(t, _mm256_andnot_si256(_mm256_cmpeq_epi32(_mm256_and_si256(b, _mm256_set1_epi32(0x00ff00ff)), zero_vec), eight_vec));
+			t = _mm256_sub_epi32(t, _mm256_andnot_si256(_mm256_cmpeq_epi32(_mm256_and_si256(b, _mm256_set1_epi32(0x0f0f0f0f)), zero_vec), four_vec));
+			t = _mm256_sub_epi32(t, _mm256_andnot_si256(_mm256_cmpeq_epi32(_mm256_and_si256(b, _mm256_set1_epi32(0x33333333)), zero_vec), two_vec));
+			t = _mm256_sub_epi32(t, _mm256_andnot_si256(_mm256_cmpeq_epi32(_mm256_and_si256(b, _mm256_set1_epi32(0x55555555)), zero_vec), one_vec));
+			t = _mm256_srli_epi32(t, 3);
 			t = _mm256_sub_epi32(t, _mm256_srli_epi32(t, 2));
 			a = _mm256_srlv_epi32(a, _mm256_slli_epi32(t, 3));
-			l = CLZB32x8(a);
+			l = _mm256_srli_epi32(_mm256_set_epi32(
+				VECTOR_CODEC_CLZ(_mm256_extract_epi32(a, 7)), VECTOR_CODEC_CLZ(_mm256_extract_epi32(a, 6)),
+				VECTOR_CODEC_CLZ(_mm256_extract_epi32(a, 5)), VECTOR_CODEC_CLZ(_mm256_extract_epi32(a, 4)),
+				VECTOR_CODEC_CLZ(_mm256_extract_epi32(a, 3)), VECTOR_CODEC_CLZ(_mm256_extract_epi32(a, 2)),
+				VECTOR_CODEC_CLZ(_mm256_extract_epi32(a, 1)), VECTOR_CODEC_CLZ(_mm256_extract_epi32(a, 0))), 3);
 			b = _mm256_sub_epi32(four_vec, _mm256_sub_epi32(l, _mm256_and_si256(one_vec, _mm256_cmpeq_epi32(l, three_vec))));
 			l = _mm256_sub_epi32(l, _mm256_and_si256(one_vec, _mm256_cmpgt_epi32(l, two_vec)));
 			*(uint32_t*)out = VECTOR_CODEC_BSWAP_IF_BE(_mm256_extract_epi32(a, 0)); out += _mm256_extract_epi32(b, 0);
@@ -191,6 +175,7 @@ namespace VectorCodec
 		const __m128i one_vec16 = _mm_set1_epi16(1);
 		const __m128i three_vec16 = _mm_set1_epi16(3);
 		const __m128i four_vec16 = _mm_set1_epi16(4);
+
 		const __m256i one_vec32 = _mm256_set1_epi32(1);
 		const __m256i three_vec32 = _mm256_set1_epi32(3);
 		const __m256i modmask_vec32 = _mm256_set1_epi32(LOOKUP_SIZE - 1);
@@ -206,8 +191,10 @@ namespace VectorCodec
 			uint32_t header = VECTOR_CODEC_BSWAP_IF_BE(*in_headers);
 			++in_headers;
 			l = _mm_and_si128(_mm_set_epi16(header >> 14, header >> 12, header >> 10, header >> 8, header >> 6, header >> 4, header >> 2, header), three_vec16);
-			l = _mm_sub_epi16(four_vec16, _mm_add_epi16(l, _mm_srli_epi16(_mm_add_epi16(l, one_vec16), 2)));
-			l2 = PrefixSum16x8(l);
+			l2 = l = _mm_sub_epi16(four_vec16, _mm_add_epi16(l, _mm_srli_epi16(_mm_add_epi16(l, one_vec16), 2)));
+			l2 = _mm_add_epi16(_mm_slli_si128(l2, 2), l2);
+			l2 = _mm_add_epi16(_mm_slli_si128(l2, 4), l2);
+			l2 = _mm_add_epi16(_mm_slli_si128(l2, 8), l2);
 			a = _mm256_i32gather_epi32((const int*)data, _mm256_cvtepi16_epi32(_mm_slli_si128(l2, 2)), 1);
 			data += _mm_extract_epi16(l2, 7);
 			a = _mm256_and_si256(a, _mm256_sub_epi32(_mm256_sllv_epi32(one_vec32, _mm256_slli_epi32(_mm256_cvtepi16_epi32(l), 3)), one_vec32));
