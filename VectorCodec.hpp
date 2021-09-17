@@ -68,8 +68,8 @@ namespace VectorCodec
 #define VECTOR_CODEC_UNLIKELY_IF(CONDITION) if (__builtin_expect((CONDITION), 0))
 #ifndef VECTOR_CODEC_INVARIANT
 #define VECTOR_CODEC_INVARIANT __builtin_assume
-#define VECTOR_CODEC_CLZ __builtin_clz
 #endif
+#define VECTOR_CODEC_CLZ __builtin_clz
 #else
 #include <intrin.h>
 #include <Windows.h>
@@ -82,8 +82,8 @@ namespace VectorCodec
 #define VECTOR_CODEC_UNLIKELY_IF(CONDITION) if ((CONDITION))
 #ifndef VECTOR_CODEC_INVARIANT
 #define VECTOR_CODEC_INVARIANT __assume
-#define VECTOR_CODEC_CLZ __lzcnt
 #endif
+#define VECTOR_CODEC_CLZ __lzcnt
 #endif
 
 namespace VectorCodec
