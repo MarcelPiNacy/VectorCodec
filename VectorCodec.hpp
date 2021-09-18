@@ -79,7 +79,7 @@ namespace VectorCodec
 	* @param out A pointer to a buffer where the compressed array will be stored. The size of this buffer must be set to UpperBound(value_count).
 	* @return The number of bytes stored in out.
 	* @note This function does NOT perform bounds checking on out.
-	* @note The regular and Quick versions of VectorCodec are not compatible with each other: If you compressed the data using EncodeQuick, you must use DecodeQuick to get it back.
+	* @note The regular and Quick versions of VectorCodec are not compatible with each other: If you compressed the data using Encode, you must use Decode to get it back.
 	*/
 	size_t	VECTOR_CODEC_CALL EncodeQuick(const float* VECTOR_CODEC_RESTRICT values, size_t value_count, uint8_t* VECTOR_CODEC_RESTRICT out) noexcept;
 
