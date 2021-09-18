@@ -46,7 +46,7 @@ namespace VectorCodec
 	constexpr size_t VECTOR_CODEC_CALL UpperBound(size_t value_count) noexcept
 	{
 		size_t h = (value_count + 1) / 2;
-		size_t d = (value_count + 31) & ~31;
+		size_t d = ((value_count + 31) & ~31) * 4;
 		return h + d;
 	}
 
