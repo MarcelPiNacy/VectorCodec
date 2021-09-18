@@ -38,6 +38,7 @@ int main()
     // Compression:
     std::vector<uint8_t> compressed(VectorCodec::UpperBound(n));
     size_t k = VectorCodec::Encode(values.data(), values.size(), compressed.data());
+    compressed.resize(k);
 
     // Decompression:
     std::vector<float> decompressed(values.size());
