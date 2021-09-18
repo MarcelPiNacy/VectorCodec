@@ -35,17 +35,31 @@
 
 namespace VectorCodec
 {
-	// Returns the size in bytes of a compressed float array in the worst case.
+	/** @brief Returns the size of a compressed array in the worst case.
+	* @param value_count The number of elements of the array to compress.
+	* @return The maximum size of the compressed array, in bytes.
+	*/
 	constexpr size_t UpperBound(size_t value_count) noexcept
 	{
 		return (value_count + 1) / 2 + value_count * 4;
 	}
 
-	// Compresses a float array, storing the result in "out".
+	/** @brief Compresses an array of floats.
+	* @param values A pointer to the array.
+	* @param value_count The number of floats to compress.
+	* @param out A pointer to a buffer where the compressed array will be stored. The size of this buffer must be set to UpperBound(value_count).
+	* @return The number of bytes stored in out.
+	* @note This function does NOT perform bounds checking on out.
+	*/
 	size_t	Encode(const float* VECTOR_CODEC_RESTRICT values, size_t value_count, uint8_t* VECTOR_CODEC_RESTRICT out) noexcept;
-	
-	// Decompresses a float array, storing the result in "out".
-	void	Decode(const uint8_t* VECTOR_CODEC_RESTRICT begin, size_t value_count, float* VECTOR_CODEC_RESTRICT out) noexcept;
+
+	/** @brief Decompresses an array of floats.
+	* @param compressed A pointer to the compressed data.
+	* @param value_count The number of floats to decompress.
+	* @param out A pointer to an array where the decompressed values will be stored.
+	* @note This function does NOT perform bounds checking on out, be careful to properly size it in respect to value_count.
+	*/
+	void	Decode(const uint8_t* VECTOR_CODEC_RESTRICT compressed, size_t value_count, float* VECTOR_CODEC_RESTRICT out) noexcept;
 }
 #endif
 
@@ -222,9 +236,9 @@ namespace VectorCodec
 #ifdef VECTOR_CODEC_INLINE
 	VECTOR_CODEC_INLINE_ALWAYS static
 #endif
-	void Decode(const uint8_t* VECTOR_CODEC_RESTRICT data, size_t value_count, float* VECTOR_CODEC_RESTRICT out) noexcept
+	void Decode(const uint8_t* VECTOR_CODEC_RESTRICT compressed, size_t value_count, float* VECTOR_CODEC_RESTRICT out) noexcept
 	{
-		Decode_AVX2(data, value_count, out);
+		Decode_AVX2(compressed, value_count, out);
 	}
 }
 #undef VECTOR_CODEC_BSWAP_IF_BE
