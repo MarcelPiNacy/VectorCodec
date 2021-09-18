@@ -73,7 +73,7 @@ namespace VectorCodec
 	*/
 	void	VECTOR_CODEC_CALL Decode(const uint8_t* VECTOR_CODEC_RESTRICT compressed, size_t value_count, float* VECTOR_CODEC_RESTRICT out) noexcept;
 
-	/** @brief Compresses an array of floats using a simpler scheme than Encode.
+	/** @brief Compresses an array of floats without using a lookup table.
 	* @param values A pointer to the array.
 	* @param value_count The number of floats to compress.
 	* @param out A pointer to a buffer where the compressed array will be stored. The size of this buffer must be set to UpperBound(value_count).
@@ -82,7 +82,7 @@ namespace VectorCodec
 	*/
 	size_t	VECTOR_CODEC_CALL EncodeQuick(const float* VECTOR_CODEC_RESTRICT values, size_t value_count, uint8_t* VECTOR_CODEC_RESTRICT out) noexcept;
 
-	/** @brief Decompresses an array of floats using a simpler scheme Decode.
+	/** @brief Decompresses an array of floats without using a lookup table.
 	* @param compressed A pointer to the compressed data.
 	* @param value_count The number of floats to decompress.
 	* @param out A pointer to an array where the decompressed values will be stored.
