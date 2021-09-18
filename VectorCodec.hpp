@@ -40,12 +40,14 @@
 namespace VectorCodec
 {
 	/** @brief Returns the size of a compressed array in the worst case.
-	* @param value_count The number of elements of the array to compress.
-	* @return The maximum size of the compressed array, in bytes.
+	* @param value_count The number of floats to compress.
+	* @return The maximum size of the compressed data, in bytes.
 	*/
 	constexpr size_t VECTOR_CODEC_CALL UpperBound(size_t value_count) noexcept
 	{
-		return (value_count + 1) / 2 + value_count * 4;
+		size_t h = (value_count + 1) / 2;
+		size_t d = (value_count + 31) & ~31;
+		return h + d;
 	}
 
 	/** @brief Compresses an array of floats.
