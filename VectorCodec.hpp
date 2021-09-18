@@ -57,9 +57,26 @@ namespace VectorCodec
 	* @param compressed A pointer to the compressed data.
 	* @param value_count The number of floats to decompress.
 	* @param out A pointer to an array where the decompressed values will be stored.
-	* @note This function does NOT perform bounds checking on out, be careful to properly size it in respect to value_count.
+	* @note This function does NOT perform bounds checking on out, be careful to properly size it in relation to value_count.
 	*/
 	void	Decode(const uint8_t* VECTOR_CODEC_RESTRICT compressed, size_t value_count, float* VECTOR_CODEC_RESTRICT out) noexcept;
+
+	/** @brief Compresses an array of floats using a simpler scheme than Encode.
+	* @param values A pointer to the array.
+	* @param value_count The number of floats to compress.
+	* @param out A pointer to a buffer where the compressed array will be stored. The size of this buffer must be set to UpperBound(value_count).
+	* @return The number of bytes stored in out.
+	* @note This function does NOT perform bounds checking on out.
+	*/
+	size_t	EncodeQuick(const float* VECTOR_CODEC_RESTRICT values, size_t value_count, uint8_t* VECTOR_CODEC_RESTRICT out) noexcept;
+
+	/** @brief Decompresses an array of floats using a simpler scheme Decode.
+	* @param compressed A pointer to the compressed data.
+	* @param value_count The number of floats to decompress.
+	* @param out A pointer to an array where the decompressed values will be stored.
+	* @note This function does NOT perform bounds checking on out, be careful to properly size it in relation to value_count.
+	*/
+	void	DecodeQuick(const uint8_t* VECTOR_CODEC_RESTRICT compressed, size_t value_count, float* VECTOR_CODEC_RESTRICT out) noexcept;
 }
 #endif
 
@@ -136,7 +153,8 @@ namespace VectorCodec
 			lookup[_mm256_extract_epi32(i, 5)] = _mm256_extract_epi32(a, 5);
 			lookup[_mm256_extract_epi32(i, 6)] = _mm256_extract_epi32(a, 6);
 			lookup[_mm256_extract_epi32(i, 7)] = _mm256_extract_epi32(a, 7);
-			i = _mm256_and_si256(_mm256_xor_si256(a, _mm256_srli_epi32(a, 24)), _mm256_set1_epi32(255));
+			b = _mm256_srli_epi32(a, 8);
+			i = _mm256_and_si256(_mm256_xor_si256(b, _mm256_srli_epi32(b, 16)), _mm256_set1_epi32(255));
 			a = _mm256_xor_si256(a, xprior);
 			xprior = _mm256_i32gather_epi32(lookup, i, 4);
 			b = _mm256_andnot_si256(_mm256_sub_epi32(a, _mm256_set1_epi32(1)), a);
@@ -210,8 +228,102 @@ namespace VectorCodec
 			lookup[_mm256_extract_epi32(i, 5)] = _mm256_extract_epi32(a, 5);
 			lookup[_mm256_extract_epi32(i, 6)] = _mm256_extract_epi32(a, 6);
 			lookup[_mm256_extract_epi32(i, 7)] = _mm256_extract_epi32(a, 7);
-			i = _mm256_and_si256(_mm256_xor_si256(a, _mm256_srli_epi32(a, 24)), _mm256_set1_epi32(255));
+			b = _mm256_srli_epi32(a, 8);
+			i = _mm256_and_si256(_mm256_xor_si256(b, _mm256_srli_epi32(b, 16)), _mm256_set1_epi32(255));
 			xprior = _mm256_i32gather_epi32(lookup, i, 4);
+			a = _mm256_add_epi32(a, prior);
+			VECTOR_CODEC_UNLIKELY_IF(value_count < 8)
+				break;
+			_mm256_storeu_si256((__m256i*)out, a);
+			prior = a;
+			value_count -= 8;
+			out += 8;
+		}
+		VECTOR_CODEC_UNLIKELY_IF(value_count != 0)
+			(void)memcpy(out, &a, value_count << 2);
+		_mm256_zeroall();
+	}
+
+	VECTOR_CODEC_INLINE_ALWAYS
+	static size_t EncodeFast_AVX2(const float* VECTOR_CODEC_RESTRICT values, size_t value_count, uint8_t* VECTOR_CODEC_RESTRICT out)
+	{
+		const float* const end = values + value_count;
+		const uint8_t* const out_begin = out;
+		__m256i a, b, l, t, prior;
+		uint32_t* out_headers = (uint32_t*)out;
+		prior = _mm256_setzero_si256();
+		out += (value_count + 1) / 2;
+		do
+		{
+			VECTOR_CODEC_UNLIKELY_IF(end - values < 8)
+				(void)memcpy(&a, values, (end - values) << 2);
+			else
+			a = _mm256_loadu_si256((const __m256i*)values);
+			b = a;
+			a = _mm256_sub_epi32(a, prior);
+			prior = b;
+			b = _mm256_andnot_si256(_mm256_sub_epi32(a, _mm256_set1_epi32(1)), a);
+			t = _mm256_set1_epi32(32);
+			t = _mm256_sub_epi32(t, _mm256_andnot_si256(_mm256_cmpeq_epi32(b, _mm256_setzero_si256()), _mm256_set1_epi32(1)));
+			t = _mm256_sub_epi32(t, _mm256_andnot_si256(_mm256_cmpeq_epi32(_mm256_and_si256(b, _mm256_set1_epi32(0x0000ffff)), _mm256_setzero_si256()), _mm256_set1_epi32(16)));
+			t = _mm256_sub_epi32(t, _mm256_andnot_si256(_mm256_cmpeq_epi32(_mm256_and_si256(b, _mm256_set1_epi32(0x00ff00ff)), _mm256_setzero_si256()), _mm256_set1_epi32(8)));
+			t = _mm256_sub_epi32(t, _mm256_andnot_si256(_mm256_cmpeq_epi32(_mm256_and_si256(b, _mm256_set1_epi32(0x0f0f0f0f)), _mm256_setzero_si256()), _mm256_set1_epi32(4)));
+			t = _mm256_sub_epi32(t, _mm256_andnot_si256(_mm256_cmpeq_epi32(_mm256_and_si256(b, _mm256_set1_epi32(0x33333333)), _mm256_setzero_si256()), _mm256_set1_epi32(2)));
+			t = _mm256_sub_epi32(t, _mm256_andnot_si256(_mm256_cmpeq_epi32(_mm256_and_si256(b, _mm256_set1_epi32(0x55555555)), _mm256_setzero_si256()), _mm256_set1_epi32(1)));
+			t = _mm256_srli_epi32(t, 3);
+			t = _mm256_sub_epi32(t, _mm256_srli_epi32(t, 2));
+			a = _mm256_srlv_epi32(a, _mm256_slli_epi32(t, 3));
+			l = _mm256_srli_epi32(_mm256_set_epi32(
+				VECTOR_CODEC_CLZ(_mm256_extract_epi32(a, 7)), VECTOR_CODEC_CLZ(_mm256_extract_epi32(a, 6)),
+				VECTOR_CODEC_CLZ(_mm256_extract_epi32(a, 5)), VECTOR_CODEC_CLZ(_mm256_extract_epi32(a, 4)),
+				VECTOR_CODEC_CLZ(_mm256_extract_epi32(a, 3)), VECTOR_CODEC_CLZ(_mm256_extract_epi32(a, 2)),
+				VECTOR_CODEC_CLZ(_mm256_extract_epi32(a, 1)), VECTOR_CODEC_CLZ(_mm256_extract_epi32(a, 0))), 3);
+			b = _mm256_sub_epi32(_mm256_set1_epi32(4), _mm256_sub_epi32(l, _mm256_and_si256(_mm256_set1_epi32(1), _mm256_cmpeq_epi32(l, _mm256_set1_epi32(3)))));
+			l = _mm256_sub_epi32(l, _mm256_and_si256(_mm256_set1_epi32(1), _mm256_cmpgt_epi32(l, _mm256_set1_epi32(2))));
+			*(uint32_t*)out = VECTOR_CODEC_BSWAP_IF_BE(_mm256_extract_epi32(a, 0)); out += _mm256_extract_epi32(b, 0);
+			*(uint32_t*)out = VECTOR_CODEC_BSWAP_IF_BE(_mm256_extract_epi32(a, 1)); out += _mm256_extract_epi32(b, 1);
+			*(uint32_t*)out = VECTOR_CODEC_BSWAP_IF_BE(_mm256_extract_epi32(a, 2)); out += _mm256_extract_epi32(b, 2);
+			*(uint32_t*)out = VECTOR_CODEC_BSWAP_IF_BE(_mm256_extract_epi32(a, 3)); out += _mm256_extract_epi32(b, 3);
+			*(uint32_t*)out = VECTOR_CODEC_BSWAP_IF_BE(_mm256_extract_epi32(a, 4)); out += _mm256_extract_epi32(b, 4);
+			*(uint32_t*)out = VECTOR_CODEC_BSWAP_IF_BE(_mm256_extract_epi32(a, 5)); out += _mm256_extract_epi32(b, 5);
+			*(uint32_t*)out = VECTOR_CODEC_BSWAP_IF_BE(_mm256_extract_epi32(a, 6)); out += _mm256_extract_epi32(b, 6);
+			*(uint32_t*)out = VECTOR_CODEC_BSWAP_IF_BE(_mm256_extract_epi32(a, 7)); out += _mm256_extract_epi32(b, 7);
+			l = _mm256_sllv_epi32(l, _mm256_set_epi32(14, 12, 10, 8, 6, 4, 2, 0));
+			t = _mm256_sllv_epi32(t, _mm256_set_epi32(30, 28, 26, 24, 22, 20, 18, 16));
+			l = _mm256_or_si256(l, t);
+			l = _mm256_or_si256(l, _mm256_srli_si256(l, 8));
+			l = _mm256_or_si256(l, _mm256_srli_epi64(l, 32));
+			*out_headers = VECTOR_CODEC_BSWAP_IF_BE((uint32_t)_mm256_extract_epi32(l, 0) | (uint32_t)_mm256_extract_epi32(l, 4));
+			++out_headers;
+			values += 8;
+		} while (values < end);
+		_mm256_zeroall();
+		VECTOR_CODEC_INVARIANT(out >= out_begin);
+		return out - out_begin;
+	}
+
+	VECTOR_CODEC_INLINE_ALWAYS
+	static void DecodeFast_AVX2(const uint8_t* VECTOR_CODEC_RESTRICT data, size_t value_count, float* VECTOR_CODEC_RESTRICT out) noexcept
+	{
+		const uint32_t* in_headers = (const uint32_t*)data;
+		__m256i a, b, prior;
+		__m128i l, l2;
+		prior = _mm256_setzero_si256();
+		data += (value_count + 1) / 2;
+		while (true)
+		{
+			uint32_t header = VECTOR_CODEC_BSWAP_IF_BE(*in_headers);
+			++in_headers;
+			l = _mm_and_si128(_mm_set_epi16(header >> 14, header >> 12, header >> 10, header >> 8, header >> 6, header >> 4, header >> 2, header), _mm_set1_epi16(3));
+			l2 = l = _mm_sub_epi16(_mm_set1_epi16(4), _mm_add_epi16(l, _mm_srli_epi16(_mm_add_epi16(l, _mm_set1_epi16(1)), 2)));
+			l2 = _mm_add_epi16(_mm_slli_si128(l2, 2), l2);
+			l2 = _mm_add_epi16(_mm_slli_si128(l2, 4), l2);
+			l2 = _mm_add_epi16(_mm_slli_si128(l2, 8), l2);
+			a = _mm256_i32gather_epi32((const int*)data, _mm256_cvtepi16_epi32(_mm_slli_si128(l2, 2)), 1);
+			data += _mm_extract_epi16(l2, 7);
+			a = _mm256_and_si256(a, _mm256_sub_epi32(_mm256_sllv_epi32(_mm256_set1_epi32(1), _mm256_slli_epi32(_mm256_cvtepi16_epi32(l), 3)), _mm256_set1_epi32(1)));
+			b = _mm256_and_si256(_mm256_srlv_epi32(_mm256_set1_epi32(header), _mm256_set_epi32(30, 28, 26, 24, 22, 20, 18, 16)), _mm256_set1_epi32(3));
+			a = _mm256_sllv_epi32(a, _mm256_slli_epi32(b, 3));
 			a = _mm256_add_epi32(a, prior);
 			VECTOR_CODEC_UNLIKELY_IF(value_count < 8)
 				break;
@@ -239,6 +351,22 @@ namespace VectorCodec
 	void Decode(const uint8_t* VECTOR_CODEC_RESTRICT compressed, size_t value_count, float* VECTOR_CODEC_RESTRICT out) noexcept
 	{
 		Decode_AVX2(compressed, value_count, out);
+	}
+
+#ifdef VECTOR_CODEC_INLINE
+	VECTOR_CODEC_INLINE_ALWAYS static
+#endif
+	size_t EncodeQuick(const float* VECTOR_CODEC_RESTRICT values, size_t value_count, uint8_t* VECTOR_CODEC_RESTRICT out) noexcept
+	{
+		return EncodeFast_AVX2(values, value_count, out);
+	}
+
+#ifdef VECTOR_CODEC_INLINE
+	VECTOR_CODEC_INLINE_ALWAYS static
+#endif
+	void DecodeQuick(const uint8_t* VECTOR_CODEC_RESTRICT compressed, size_t value_count, float* VECTOR_CODEC_RESTRICT out) noexcept
+	{
+		DecodeFast_AVX2(compressed, value_count, out);
 	}
 }
 #undef VECTOR_CODEC_BSWAP_IF_BE
