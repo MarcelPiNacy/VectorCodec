@@ -39,14 +39,6 @@
 
 namespace VectorCodec
 {
-	namespace Params
-	{
-		constexpr uint32_t LookupSize = 256;
-		constexpr uint32_t ModMask = LookupSize - 1;
-		constexpr uint8_t LSBDiscardedCount = 8;
-		constexpr uint8_t HashShift = 16;
-	}
-
 	/** @brief Returns the size of a compressed array in the worst case.
 	* @param value_count The number of elements of the array to compress.
 	* @return The maximum size of the compressed array, in bytes.
@@ -142,6 +134,14 @@ namespace VectorCodec
 {
 	namespace Impl
 	{
+		namespace Params
+		{
+			constexpr uint32_t LookupSize = 256;
+			constexpr uint32_t ModMask = LookupSize - 1;
+			constexpr uint8_t LSBDiscardedCount = 8;
+			constexpr uint8_t HashShift = 16;
+		}
+
 		VECTOR_CODEC_INLINE_ALWAYS
 		static size_t Encode_AVX2(const float* VECTOR_CODEC_RESTRICT values, size_t value_count, uint8_t* VECTOR_CODEC_RESTRICT out)
 		{
