@@ -107,7 +107,7 @@ namespace VectorCodec
 #define VECTOR_CODEC_BSWAP_IF_BE(VALUE) (VALUE)
 #endif
 #ifndef VECTOR_CODEC_INLINE_ALWAYS
-#define VECTOR_CODEC_INLINE_ALWAYS __attribute__((always_inline))
+#define VECTOR_CODEC_INLINE_ALWAYS __attribute__((flatten))
 #endif
 #define VECTOR_CODEC_UNLIKELY_IF(CONDITION) if (__builtin_expect((CONDITION), 0))
 #ifndef VECTOR_CODEC_INVARIANT
