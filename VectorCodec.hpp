@@ -39,6 +39,14 @@
 
 namespace VectorCodec
 {
+	namespace Params
+	{
+		constexpr uint32_t LookupSize = 256;
+		constexpr uint32_t ModMask = LookupSize - 1;
+		constexpr uint8_t LSBDiscardedCount = 8;
+		constexpr uint8_t HashShift = 16;
+	}
+
 	/** @brief Returns the size of a compressed array in the worst case.
 	* @param value_count The number of elements of the array to compress.
 	* @return The maximum size of the compressed array, in bytes.
@@ -132,18 +140,10 @@ namespace VectorCodec
 {
 	namespace Impl
 	{
-		namespace Param
-		{
-			static constexpr uint32_t LookupSize = 256;
-			static constexpr uint32_t ModMask = LookupSize - 1;
-			static constexpr uint32_t LSBDiscardedCount = 8;
-			static constexpr uint32_t HashShift = 16;
-		}
-
 		VECTOR_CODEC_INLINE_ALWAYS
 		static size_t Encode_AVX2(const float* VECTOR_CODEC_RESTRICT values, size_t value_count, uint8_t* VECTOR_CODEC_RESTRICT out)
 		{
-			alignas(64) int32_t lookup[Param::LookupSize] = {};
+			alignas(64) int32_t lookup[Params::LookupSize] = {};
 			const float* const end = values + value_count;
 			const uint8_t* const out_begin = out;
 			__m256i indices, prior, xprior;
@@ -168,8 +168,8 @@ namespace VectorCodec
 				lookup[_mm256_extract_epi32(indices, 5)] = _mm256_extract_epi32(vec, 5);
 				lookup[_mm256_extract_epi32(indices, 6)] = _mm256_extract_epi32(vec, 6);
 				lookup[_mm256_extract_epi32(indices, 7)] = _mm256_extract_epi32(vec, 7);
-				tmp = _mm256_srli_epi32(vec, Param::LSBDiscardedCount);
-				indices = _mm256_and_si256(_mm256_xor_si256(tmp, _mm256_srli_epi32(tmp, Param::HashShift)), _mm256_set1_epi32(Param::ModMask)); // We're going to hope values get hashed to good positions...
+				tmp = _mm256_srli_epi32(vec, Params::LSBDiscardedCount);
+				indices = _mm256_and_si256(_mm256_xor_si256(tmp, _mm256_srli_epi32(tmp, Params::HashShift)), _mm256_set1_epi32(Params::ModMask)); // We're going to hope values get hashed to good positions...
 				vec = _mm256_xor_si256(vec, xprior);
 				xprior = _mm256_i32gather_epi32(lookup, indices, 4);
 				tmp = _mm256_andnot_si256(_mm256_sub_epi32(vec, _mm256_set1_epi32(1)), vec);
@@ -215,7 +215,7 @@ namespace VectorCodec
 		VECTOR_CODEC_INLINE_ALWAYS
 		static void Decode_AVX2(const uint8_t* VECTOR_CODEC_RESTRICT data, size_t value_count, float* VECTOR_CODEC_RESTRICT out) noexcept
 		{
-			alignas(32) int32_t lookup[Param::LookupSize] = {};
+			alignas(32) int32_t lookup[Params::LookupSize] = {};
 			const uint32_t* in_headers = (const uint32_t*)data;
 			__m256i indices, xprior, prior;
 			xprior = prior = indices = _mm256_setzero_si256();
@@ -243,8 +243,8 @@ namespace VectorCodec
 				lookup[_mm256_extract_epi32(indices, 5)] = _mm256_extract_epi32(vec, 5);
 				lookup[_mm256_extract_epi32(indices, 6)] = _mm256_extract_epi32(vec, 6);
 				lookup[_mm256_extract_epi32(indices, 7)] = _mm256_extract_epi32(vec, 7);
-				tmp = _mm256_srli_epi32(vec, Param::LSBDiscardedCount);
-				indices = _mm256_and_si256(_mm256_xor_si256(tmp, _mm256_srli_epi32(tmp, Param::HashShift)), _mm256_set1_epi32(Param::ModMask));
+				tmp = _mm256_srli_epi32(vec, Params::LSBDiscardedCount);
+				indices = _mm256_and_si256(_mm256_xor_si256(tmp, _mm256_srli_epi32(tmp, Params::HashShift)), _mm256_set1_epi32(Params::ModMask));
 				xprior = _mm256_i32gather_epi32(lookup, indices, 4);
 				vec = _mm256_add_epi32(vec, prior);
 				VECTOR_CODEC_UNLIKELY_IF(value_count < 8)
