@@ -45,8 +45,9 @@ namespace VectorCodec
 	*/
 	constexpr size_t VECTOR_CODEC_CALL UpperBound(size_t value_count) noexcept
 	{
-		size_t h = (value_count + 1) / 2;
-		size_t d = ((value_count + 31) & ~31) * 4;
+		value_count = ((value_count + 7) & ~7);
+		size_t h = value_count / 2;
+		size_t d = value_count * 4;
 		return h + d;
 	}
 
@@ -153,7 +154,7 @@ namespace VectorCodec
 			__m256i indices, prior, xprior;
 			uint32_t* out_headers = (uint32_t*)out;
 			prior = xprior = indices = _mm256_setzero_si256();
-			out += (value_count + 1) / 2;
+			out += ((value_count + 7) & ~7) / 2;
 			do
 			{
 				__m256i vec = _mm256_setzero_si256();
@@ -223,7 +224,7 @@ namespace VectorCodec
 			const uint32_t* in_headers = (const uint32_t*)data;
 			__m256i indices, xprior, prior;
 			xprior = prior = indices = _mm256_setzero_si256();
-			data += (value_count + 1) / 2;
+			data += ((value_count + 7) & ~7) / 2;
 			while (true)
 			{
 				uint32_t header = VECTOR_CODEC_BSWAP_IF_BE(*in_headers);
@@ -273,7 +274,7 @@ namespace VectorCodec
 			__m256i prior;
 			uint32_t* out_headers = (uint32_t*)out;
 			prior = _mm256_setzero_si256();
-			out += (value_count + 1) / 2;
+			out += ((value_count + 7) & ~7) / 2;
 			do
 			{
 				__m256i vec = _mm256_setzero_si256();
@@ -329,7 +330,7 @@ namespace VectorCodec
 		{
 			const uint32_t* in_headers = (const uint32_t*)data;
 			__m256i prior = _mm256_setzero_si256();
-			data += (value_count + 1) / 2;
+			data += ((value_count + 7) & ~7) / 2;
 			while (true)
 			{
 				uint32_t header = VECTOR_CODEC_BSWAP_IF_BE(*in_headers);
