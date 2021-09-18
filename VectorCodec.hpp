@@ -141,8 +141,7 @@ namespace VectorCodec
 		{
 			constexpr uint32_t LookupSize = 256;
 			constexpr uint32_t ModMask = LookupSize - 1;
-			constexpr uint8_t LSBDiscardedCount = 8;
-			constexpr uint8_t HashShift = 16;
+			constexpr uint8_t HashShift = 24;
 		}
 
 		VECTOR_CODEC_INLINE_ALWAYS
@@ -153,7 +152,7 @@ namespace VectorCodec
 			const uint8_t* const out_begin = out;
 			__m256i indices, prior, xprior;
 			uint32_t* out_headers = (uint32_t*)out;
-			prior = xprior = indices = _mm256_setzero_si256();
+			xprior = indices = _mm256_setzero_si256();
 			out += ((value_count + 7) & ~7) / 2;
 			do
 			{
@@ -163,8 +162,6 @@ namespace VectorCodec
 				else
 					vec = _mm256_loadu_si256((const __m256i*)values);
 				__m256i tmp = vec;
-				vec = _mm256_sub_epi32(vec, prior);
-				prior = tmp;
 				lookup[_mm256_extract_epi32(indices, 0)] = _mm256_extract_epi32(vec, 0);
 				lookup[_mm256_extract_epi32(indices, 1)] = _mm256_extract_epi32(vec, 1);
 				lookup[_mm256_extract_epi32(indices, 2)] = _mm256_extract_epi32(vec, 2);
@@ -173,8 +170,7 @@ namespace VectorCodec
 				lookup[_mm256_extract_epi32(indices, 5)] = _mm256_extract_epi32(vec, 5);
 				lookup[_mm256_extract_epi32(indices, 6)] = _mm256_extract_epi32(vec, 6);
 				lookup[_mm256_extract_epi32(indices, 7)] = _mm256_extract_epi32(vec, 7);
-				tmp = _mm256_srli_epi32(vec, Params::LSBDiscardedCount);
-				indices = _mm256_and_si256(_mm256_xor_si256(tmp, _mm256_srli_epi32(tmp, Params::HashShift)), _mm256_set1_epi32(Params::ModMask)); // We're going to hope values get hashed to good positions...
+				indices = _mm256_and_si256(_mm256_xor_si256(vec, _mm256_srli_epi32(vec, Params::HashShift)), _mm256_set1_epi32(Params::ModMask)); // We're going to hope values get hashed to good positions...
 				vec = _mm256_xor_si256(vec, xprior);
 				xprior = _mm256_i32gather_epi32(lookup, indices, 4);
 				tmp = _mm256_andnot_si256(_mm256_sub_epi32(vec, _mm256_set1_epi32(1)), vec);
@@ -223,7 +219,7 @@ namespace VectorCodec
 			alignas(32) int32_t lookup[Params::LookupSize] = {};
 			const uint32_t* in_headers = (const uint32_t*)data;
 			__m256i indices, xprior, prior;
-			xprior = prior = indices = _mm256_setzero_si256();
+			xprior = indices = _mm256_setzero_si256();
 			data += ((value_count + 7) & ~7) / 2;
 			while (true)
 			{
@@ -248,10 +244,8 @@ namespace VectorCodec
 				lookup[_mm256_extract_epi32(indices, 5)] = _mm256_extract_epi32(vec, 5);
 				lookup[_mm256_extract_epi32(indices, 6)] = _mm256_extract_epi32(vec, 6);
 				lookup[_mm256_extract_epi32(indices, 7)] = _mm256_extract_epi32(vec, 7);
-				tmp = _mm256_srli_epi32(vec, Params::LSBDiscardedCount);
-				indices = _mm256_and_si256(_mm256_xor_si256(tmp, _mm256_srli_epi32(tmp, Params::HashShift)), _mm256_set1_epi32(Params::ModMask));
+				indices = _mm256_and_si256(_mm256_xor_si256(vec, _mm256_srli_epi32(vec, Params::HashShift)), _mm256_set1_epi32(Params::ModMask));
 				xprior = _mm256_i32gather_epi32(lookup, indices, 4);
-				vec = _mm256_add_epi32(vec, prior);
 				VECTOR_CODEC_UNLIKELY_IF(value_count < 8)
 				{
 					VECTOR_CODEC_UNLIKELY_IF(value_count != 0)
@@ -260,7 +254,6 @@ namespace VectorCodec
 					return;
 				}
 				_mm256_storeu_si256((__m256i*)out, vec);
-				prior = vec;
 				value_count -= 8;
 				out += 8;
 			}
