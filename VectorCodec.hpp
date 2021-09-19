@@ -46,9 +46,7 @@ namespace VectorCodec
 	constexpr size_t VECTOR_CODEC_CALL UpperBound(size_t value_count) noexcept
 	{
 		value_count = ((value_count + 7) & ~7);
-		size_t h = value_count / 2;
-		size_t d = value_count * 4;
-		return h + d;
+		return value_count / 2 + value_count * 4;
 	}
 
 	/** @brief Compresses an array of floats.
@@ -58,7 +56,7 @@ namespace VectorCodec
 	* @return The number of bytes stored in out.
 	* @note This function does NOT perform bounds checking on out.
 	*/
-	size_t	VECTOR_CODEC_CALL Encode(const float* VECTOR_CODEC_RESTRICT values, size_t value_count, uint8_t* VECTOR_CODEC_RESTRICT out) noexcept;
+	[[nodiscard]] size_t VECTOR_CODEC_CALL Encode(const float* VECTOR_CODEC_RESTRICT values, size_t value_count, uint8_t* VECTOR_CODEC_RESTRICT out) noexcept;
 
 	/** @brief Decompresses an array of floats.
 	* @param compressed A pointer to the compressed data.
@@ -66,7 +64,7 @@ namespace VectorCodec
 	* @param out A pointer to an array where the decompressed values will be stored.
 	* @note This function does NOT perform bounds checking on out, be careful to properly size it in relation to value_count.
 	*/
-	void	VECTOR_CODEC_CALL Decode(const uint8_t* VECTOR_CODEC_RESTRICT compressed, size_t value_count, float* VECTOR_CODEC_RESTRICT out) noexcept;
+	void VECTOR_CODEC_CALL Decode(const uint8_t* VECTOR_CODEC_RESTRICT compressed, size_t value_count, float* VECTOR_CODEC_RESTRICT out) noexcept;
 
 	/** @brief Compresses an array of floats without using a lookup table.
 	* @param values A pointer to the array.
@@ -76,7 +74,7 @@ namespace VectorCodec
 	* @note This function does NOT perform bounds checking on out.
 	* @note The regular and Quick versions of VectorCodec are not compatible with each other: If you compressed the data using Encode, you must use Decode to get it back.
 	*/
-	size_t	VECTOR_CODEC_CALL EncodeQuick(const float* VECTOR_CODEC_RESTRICT values, size_t value_count, uint8_t* VECTOR_CODEC_RESTRICT out) noexcept;
+	[[nodiscard]] size_t VECTOR_CODEC_CALL EncodeQuick(const float* VECTOR_CODEC_RESTRICT values, size_t value_count, uint8_t* VECTOR_CODEC_RESTRICT out) noexcept;
 
 	/** @brief Decompresses an array of floats without using a lookup table.
 	* @param compressed A pointer to the compressed data.
@@ -85,21 +83,18 @@ namespace VectorCodec
 	* @note This function does NOT perform bounds checking on out, be careful to properly size it in relation to value_count.
 	* @note The regular and Quick versions of VectorCodec are not compatible with each other: If you compressed the data using EncodeQuick, you must use DecodeQuick to get it back.
 	*/
-	void	VECTOR_CODEC_CALL DecodeQuick(const uint8_t* VECTOR_CODEC_RESTRICT compressed, size_t value_count, float* VECTOR_CODEC_RESTRICT out) noexcept;
+	void VECTOR_CODEC_CALL DecodeQuick(const uint8_t* VECTOR_CODEC_RESTRICT compressed, size_t value_count, float* VECTOR_CODEC_RESTRICT out) noexcept;
 }
 #endif
 
 
 
 #if defined(VECTOR_CODEC_IMPLEMENTATION) || defined(VECTOR_CODEC_INLINE)
-#include <cstring>
-
 #if defined(_DEBUG) || !defined(NDEBUG)
 #include <cassert>
 #define VECTOR_CODEC_INVARIANT assert
 #define VECTOR_CODEC_INLINE_ALWAYS
 #endif
-
 #if defined(__clang__) || defined(__GNUC__)
 #include <immintrin.h>
 #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
@@ -115,6 +110,7 @@ namespace VectorCodec
 #define VECTOR_CODEC_INVARIANT __builtin_assume
 #endif
 #define VECTOR_CODEC_CLZ __builtin_clz
+#define VECTOR_CODEC_UNREACHABLE __builtin_unreachable()
 #else
 #include <intrin.h>
 #include <Windows.h>
@@ -131,6 +127,20 @@ namespace VectorCodec
 #define VECTOR_CODEC_INVARIANT __assume
 #endif
 #define VECTOR_CODEC_CLZ __lzcnt
+#define VECTOR_CODEC_UNREACHABLE __assume(0)
+#endif
+#ifdef __clang__
+#if __has_builtin(__builtin_memcpy_inline)
+#define VECTOR_CODEC_MEMCPY __builtin_memcpy_inline
+#elif __has_builtin(__builtin_memcpy)
+#define VECTOR_CODEC_MEMCPY __builtin_memcpy
+#else
+#include <cstring>
+#define VECTOR_CODEC_MEMCPY (void)memcpy
+#endif
+#else
+#include <cstring>
+#define VECTOR_CODEC_MEMCPY (void)memcpy
 #endif
 
 namespace VectorCodec
@@ -144,23 +154,38 @@ namespace VectorCodec
 			constexpr uint8_t HashShift = 24;
 		}
 
-		VECTOR_CODEC_INLINE_ALWAYS
-		static size_t Encode_AVX2(const float* VECTOR_CODEC_RESTRICT values, size_t value_count, uint8_t* VECTOR_CODEC_RESTRICT out)
+		VECTOR_CODEC_INLINE_ALWAYS static
+		size_t Encode_AVX2(const float* VECTOR_CODEC_RESTRICT values, size_t value_count, uint8_t* VECTOR_CODEC_RESTRICT out)
 		{
 			alignas(64) int32_t lookup[Params::LookupSize] = {};
 			const float* const end = values + value_count;
 			const uint8_t* const out_begin = out;
-			__m256i indices, prior, xprior;
+			__m256i indices, xprior;
 			uint32_t* out_headers = (uint32_t*)out;
 			xprior = indices = _mm256_setzero_si256();
 			out += ((value_count + 7) & ~7) / 2;
 			do
 			{
 				__m256i vec = _mm256_setzero_si256();
-				VECTOR_CODEC_UNLIKELY_IF(end - values < 8)
-					(void)memcpy(&vec, values, (end - values) << 2);
+				size_t n = (end - values);
+				VECTOR_CODEC_UNLIKELY_IF(n < 8)
+				{
+					switch (value_count)
+					{
+					case 1: VECTOR_CODEC_MEMCPY(&vec, values, 4);	break;
+					case 2: VECTOR_CODEC_MEMCPY(&vec, values, 8);	break;
+					case 3: VECTOR_CODEC_MEMCPY(&vec, values, 12);	break;
+					case 4: VECTOR_CODEC_MEMCPY(&vec, values, 16);	break;
+					case 5: VECTOR_CODEC_MEMCPY(&vec, values, 20);	break;
+					case 6: VECTOR_CODEC_MEMCPY(&vec, values, 24);	break;
+					case 7: VECTOR_CODEC_MEMCPY(&vec, values, 28);	break;
+					default: VECTOR_CODEC_UNREACHABLE;
+					}
+				}
 				else
+				{
 					vec = _mm256_loadu_si256((const __m256i*)values);
+				}
 				__m256i tmp = vec;
 				lookup[_mm256_extract_epi32(indices, 0)] = _mm256_extract_epi32(vec, 0);
 				lookup[_mm256_extract_epi32(indices, 1)] = _mm256_extract_epi32(vec, 1);
@@ -218,7 +243,7 @@ namespace VectorCodec
 		{
 			alignas(32) int32_t lookup[Params::LookupSize] = {};
 			const uint32_t* in_headers = (const uint32_t*)data;
-			__m256i indices, xprior, prior;
+			__m256i indices, xprior;
 			xprior = indices = _mm256_setzero_si256();
 			data += ((value_count + 7) & ~7) / 2;
 			while (true)
@@ -249,7 +274,19 @@ namespace VectorCodec
 				VECTOR_CODEC_UNLIKELY_IF(value_count < 8)
 				{
 					VECTOR_CODEC_UNLIKELY_IF(value_count != 0)
-						(void)memcpy(out, &vec, value_count << 2);
+					{
+						switch (value_count)
+						{
+						case 1: VECTOR_CODEC_MEMCPY(out, &vec, 4);	break;
+						case 2: VECTOR_CODEC_MEMCPY(out, &vec, 8);	break;
+						case 3: VECTOR_CODEC_MEMCPY(out, &vec, 12);	break;
+						case 4: VECTOR_CODEC_MEMCPY(out, &vec, 16);	break;
+						case 5: VECTOR_CODEC_MEMCPY(out, &vec, 20);	break;
+						case 6: VECTOR_CODEC_MEMCPY(out, &vec, 24);	break;
+						case 7: VECTOR_CODEC_MEMCPY(out, &vec, 28);	break;
+						default: VECTOR_CODEC_UNREACHABLE;
+						}
+					}
 					_mm256_zeroall();
 					return;
 				}
@@ -271,10 +308,25 @@ namespace VectorCodec
 			do
 			{
 				__m256i vec = _mm256_setzero_si256();
-				VECTOR_CODEC_UNLIKELY_IF(end - values < 8)
-					(void)memcpy(&vec, values, (end - values) << 2);
+				size_t n = (end - values);
+				VECTOR_CODEC_UNLIKELY_IF(n < 8)
+				{
+					switch (n)
+					{
+					case 1: VECTOR_CODEC_MEMCPY(&vec, values, 4);	break;
+					case 2: VECTOR_CODEC_MEMCPY(&vec, values, 8);	break;
+					case 3: VECTOR_CODEC_MEMCPY(&vec, values, 12);	break;
+					case 4: VECTOR_CODEC_MEMCPY(&vec, values, 16);	break;
+					case 5: VECTOR_CODEC_MEMCPY(&vec, values, 20);	break;
+					case 6: VECTOR_CODEC_MEMCPY(&vec, values, 24);	break;
+					case 7: VECTOR_CODEC_MEMCPY(&vec, values, 28);	break;
+					default: VECTOR_CODEC_UNREACHABLE;
+					}
+				}
 				else
+				{
 					vec = _mm256_loadu_si256((const __m256i*)values);
+				}
 				__m256i tmp = vec;
 				vec = _mm256_sub_epi32(vec, prior);
 				prior = tmp;
@@ -343,7 +395,19 @@ namespace VectorCodec
 				VECTOR_CODEC_UNLIKELY_IF(value_count < 8)
 				{
 					VECTOR_CODEC_UNLIKELY_IF(value_count != 0)
-						(void)memcpy(out, &vec, value_count << 2);
+					{
+						switch (value_count)
+						{
+						case 1: VECTOR_CODEC_MEMCPY(out, &vec, 4);	break;
+						case 2: VECTOR_CODEC_MEMCPY(out, &vec, 8);	break;
+						case 3: VECTOR_CODEC_MEMCPY(out, &vec, 12);	break;
+						case 4: VECTOR_CODEC_MEMCPY(out, &vec, 16);	break;
+						case 5: VECTOR_CODEC_MEMCPY(out, &vec, 20);	break;
+						case 6: VECTOR_CODEC_MEMCPY(out, &vec, 24);	break;
+						case 7: VECTOR_CODEC_MEMCPY(out, &vec, 28);	break;
+						default: VECTOR_CODEC_UNREACHABLE;
+						}
+					}
 					_mm256_zeroall();
 					return;
 				}
@@ -392,5 +456,9 @@ namespace VectorCodec
 #undef VECTOR_CODEC_UNLIKELY_IF
 #undef VECTOR_CODEC_INVARIANT
 #undef VECTOR_CODEC_CLZ
+#undef VECTOR_CODEC_MEMCPY
 #endif
+
+#ifdef VECTOR_CODEC_RESTRICT
 #undef VECTOR_CODEC_RESTRICT
+#endif
