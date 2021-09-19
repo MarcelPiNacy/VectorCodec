@@ -149,11 +149,15 @@ namespace VectorCodec
 		{
 			constexpr uint32_t LookupSize = 256;
 			constexpr uint32_t ModMask = LookupSize - 1;
-			constexpr uint8_t HashShift = 24;
+		}
+
+		VECTOR_CODEC_INLINE_ALWAYS static __m256i VectorHash_AVX2(__m256i v) noexcept
+		{
+			return _mm256_and_si256(_mm256_srli_epi32(v, 24), _mm256_set1_epi32(Params::ModMask));
 		}
 
 		VECTOR_CODEC_INLINE_ALWAYS static
-		size_t Encode_AVX2(const float* VECTOR_CODEC_RESTRICT values, size_t value_count, uint8_t* VECTOR_CODEC_RESTRICT out)
+		size_t Encode_AVX2(const float* VECTOR_CODEC_RESTRICT values, size_t value_count, uint8_t* VECTOR_CODEC_RESTRICT out) noexcept
 		{
 			alignas(64) int32_t lookup[Params::LookupSize] = {};
 			const float* const end = values + value_count;
@@ -179,7 +183,7 @@ namespace VectorCodec
 				lookup[_mm256_extract_epi32(indices, 5)] = _mm256_extract_epi32(vec, 5);
 				lookup[_mm256_extract_epi32(indices, 6)] = _mm256_extract_epi32(vec, 6);
 				lookup[_mm256_extract_epi32(indices, 7)] = _mm256_extract_epi32(vec, 7);
-				indices = _mm256_and_si256(_mm256_xor_si256(vec, _mm256_srli_epi32(vec, Params::HashShift)), _mm256_set1_epi32(Params::ModMask)); // We're going to hope values get hashed to good positions...
+				indices = VectorHash_AVX2(vec);
 				vec = _mm256_xor_si256(vec, xprior);
 				xprior = _mm256_i32gather_epi32(lookup, indices, 4);
 				tmp = _mm256_andnot_si256(_mm256_sub_epi32(vec, _mm256_set1_epi32(1)), vec);
@@ -253,7 +257,7 @@ namespace VectorCodec
 				lookup[_mm256_extract_epi32(indices, 5)] = _mm256_extract_epi32(vec, 5);
 				lookup[_mm256_extract_epi32(indices, 6)] = _mm256_extract_epi32(vec, 6);
 				lookup[_mm256_extract_epi32(indices, 7)] = _mm256_extract_epi32(vec, 7);
-				indices = _mm256_and_si256(_mm256_xor_si256(vec, _mm256_srli_epi32(vec, Params::HashShift)), _mm256_set1_epi32(Params::ModMask));
+				indices = VectorHash_AVX2(vec);
 				xprior = _mm256_i32gather_epi32(lookup, indices, 4);
 				VECTOR_CODEC_UNLIKELY_IF(value_count < 8)
 				{
@@ -269,7 +273,7 @@ namespace VectorCodec
 		}
 
 		VECTOR_CODEC_INLINE_ALWAYS
-		static size_t EncodeQuick_AVX2(const float* VECTOR_CODEC_RESTRICT values, size_t value_count, uint8_t* VECTOR_CODEC_RESTRICT out)
+		static size_t EncodeQuick_AVX2(const float* VECTOR_CODEC_RESTRICT values, size_t value_count, uint8_t* VECTOR_CODEC_RESTRICT out) noexcept
 		{
 			const float* const end = values + value_count;
 			const uint8_t* const out_begin = out;
