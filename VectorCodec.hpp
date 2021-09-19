@@ -130,9 +130,7 @@ namespace VectorCodec
 #define VECTOR_CODEC_UNREACHABLE __assume(0)
 #endif
 #ifdef __clang__
-#if __has_builtin(__builtin_memcpy_inline)
-#define VECTOR_CODEC_MEMCPY __builtin_memcpy_inline
-#elif __has_builtin(__builtin_memcpy)
+#if __has_builtin(__builtin_memcpy)
 #define VECTOR_CODEC_MEMCPY __builtin_memcpy
 #else
 #include <cstring>
@@ -169,23 +167,9 @@ namespace VectorCodec
 				__m256i vec = _mm256_setzero_si256();
 				size_t n = (end - values);
 				VECTOR_CODEC_UNLIKELY_IF(n < 8)
-				{
-					switch (value_count)
-					{
-					case 1: VECTOR_CODEC_MEMCPY(&vec, values, 4);	break;
-					case 2: VECTOR_CODEC_MEMCPY(&vec, values, 8);	break;
-					case 3: VECTOR_CODEC_MEMCPY(&vec, values, 12);	break;
-					case 4: VECTOR_CODEC_MEMCPY(&vec, values, 16);	break;
-					case 5: VECTOR_CODEC_MEMCPY(&vec, values, 20);	break;
-					case 6: VECTOR_CODEC_MEMCPY(&vec, values, 24);	break;
-					case 7: VECTOR_CODEC_MEMCPY(&vec, values, 28);	break;
-					default: VECTOR_CODEC_UNREACHABLE;
-					}
-				}
+					VECTOR_CODEC_MEMCPY(&vec, values, n << 2);
 				else
-				{
 					vec = _mm256_loadu_si256((const __m256i*)values);
-				}
 				__m256i tmp = vec;
 				lookup[_mm256_extract_epi32(indices, 0)] = _mm256_extract_epi32(vec, 0);
 				lookup[_mm256_extract_epi32(indices, 1)] = _mm256_extract_epi32(vec, 1);
@@ -274,19 +258,7 @@ namespace VectorCodec
 				VECTOR_CODEC_UNLIKELY_IF(value_count < 8)
 				{
 					VECTOR_CODEC_UNLIKELY_IF(value_count != 0)
-					{
-						switch (value_count)
-						{
-						case 1: VECTOR_CODEC_MEMCPY(out, &vec, 4);	break;
-						case 2: VECTOR_CODEC_MEMCPY(out, &vec, 8);	break;
-						case 3: VECTOR_CODEC_MEMCPY(out, &vec, 12);	break;
-						case 4: VECTOR_CODEC_MEMCPY(out, &vec, 16);	break;
-						case 5: VECTOR_CODEC_MEMCPY(out, &vec, 20);	break;
-						case 6: VECTOR_CODEC_MEMCPY(out, &vec, 24);	break;
-						case 7: VECTOR_CODEC_MEMCPY(out, &vec, 28);	break;
-						default: VECTOR_CODEC_UNREACHABLE;
-						}
-					}
+						VECTOR_CODEC_MEMCPY(out, &vec, value_count << 2);
 					_mm256_zeroall();
 					return;
 				}
@@ -310,23 +282,9 @@ namespace VectorCodec
 				__m256i vec = _mm256_setzero_si256();
 				size_t n = (end - values);
 				VECTOR_CODEC_UNLIKELY_IF(n < 8)
-				{
-					switch (n)
-					{
-					case 1: VECTOR_CODEC_MEMCPY(&vec, values, 4);	break;
-					case 2: VECTOR_CODEC_MEMCPY(&vec, values, 8);	break;
-					case 3: VECTOR_CODEC_MEMCPY(&vec, values, 12);	break;
-					case 4: VECTOR_CODEC_MEMCPY(&vec, values, 16);	break;
-					case 5: VECTOR_CODEC_MEMCPY(&vec, values, 20);	break;
-					case 6: VECTOR_CODEC_MEMCPY(&vec, values, 24);	break;
-					case 7: VECTOR_CODEC_MEMCPY(&vec, values, 28);	break;
-					default: VECTOR_CODEC_UNREACHABLE;
-					}
-				}
+					VECTOR_CODEC_MEMCPY(&vec, values, n << 2);
 				else
-				{
 					vec = _mm256_loadu_si256((const __m256i*)values);
-				}
 				__m256i tmp = vec;
 				vec = _mm256_sub_epi32(vec, prior);
 				prior = tmp;
@@ -395,19 +353,7 @@ namespace VectorCodec
 				VECTOR_CODEC_UNLIKELY_IF(value_count < 8)
 				{
 					VECTOR_CODEC_UNLIKELY_IF(value_count != 0)
-					{
-						switch (value_count)
-						{
-						case 1: VECTOR_CODEC_MEMCPY(out, &vec, 4);	break;
-						case 2: VECTOR_CODEC_MEMCPY(out, &vec, 8);	break;
-						case 3: VECTOR_CODEC_MEMCPY(out, &vec, 12);	break;
-						case 4: VECTOR_CODEC_MEMCPY(out, &vec, 16);	break;
-						case 5: VECTOR_CODEC_MEMCPY(out, &vec, 20);	break;
-						case 6: VECTOR_CODEC_MEMCPY(out, &vec, 24);	break;
-						case 7: VECTOR_CODEC_MEMCPY(out, &vec, 28);	break;
-						default: VECTOR_CODEC_UNREACHABLE;
-						}
-					}
+						VECTOR_CODEC_MEMCPY(out, &vec, value_count << 2);
 					_mm256_zeroall();
 					return;
 				}
