@@ -147,7 +147,7 @@ namespace VectorCodec
 	{
 		namespace Params
 		{
-			constexpr uint32_t LookupSize = 256;
+			constexpr uint32_t LookupSize = 128;
 			constexpr uint32_t ModMask = LookupSize - 1;
 		}
 
