@@ -131,7 +131,7 @@ namespace VectorCodec
 #endif
 #ifdef __clang__
 #if __has_builtin(__builtin_memcpy)
-#define VECTOR_CODEC_MEMCPY __builtin_memcpy
+#define VECTOR_CODEC_MEMCPY (void)__builtin_memcpy
 #else
 #include <cstring>
 #define VECTOR_CODEC_MEMCPY (void)memcpy
@@ -145,26 +145,30 @@ namespace VectorCodec
 {
 	namespace Impl
 	{
-		namespace Params
-		{
-			constexpr uint32_t LookupSize = 128;
-			constexpr uint32_t ModMask = LookupSize - 1;
-		}
+		constexpr uint32_t LookupSize = 128;
 
-		VECTOR_CODEC_INLINE_ALWAYS static __m256i VectorHash_AVX2(__m256i v) noexcept
+#ifdef VECTOR_CODEC_SAMPLER
+		static size_t sampled_ctz[4];
+		static size_t sampled_clz[4];
+#endif
+
+		VECTOR_CODEC_INLINE_ALWAYS static
+		__m256i VectorHash_AVX2(__m256i v, __m256i i) noexcept
 		{
-			return _mm256_and_si256(_mm256_srli_epi32(v, 24), _mm256_set1_epi32(Params::ModMask));
+			v = _mm256_srli_epi32(v, 24);
+			v = _mm256_and_si256(v, _mm256_set1_epi32(LookupSize - 1));
+			return v;
 		}
 
 		VECTOR_CODEC_INLINE_ALWAYS static
 		size_t Encode_AVX2(const float* VECTOR_CODEC_RESTRICT values, size_t value_count, uint8_t* VECTOR_CODEC_RESTRICT out) noexcept
 		{
-			alignas(64) int32_t lookup[Params::LookupSize] = {};
+			alignas(64) int32_t lookup[LookupSize] = {};
 			const float* const end = values + value_count;
 			const uint8_t* const out_begin = out;
-			__m256i indices, xprior;
+			__m256i indices, predicted;
 			uint32_t* out_headers = (uint32_t*)out;
-			xprior = indices = _mm256_setzero_si256();
+			indices = predicted = _mm256_setzero_si256();
 			out += ((value_count + 7) & ~7) / 2;
 			do
 			{
@@ -174,7 +178,6 @@ namespace VectorCodec
 					VECTOR_CODEC_MEMCPY(&vec, values, n << 2);
 				else
 					vec = _mm256_loadu_si256((const __m256i*)values);
-				__m256i tmp = vec;
 				lookup[_mm256_extract_epi32(indices, 0)] = _mm256_extract_epi32(vec, 0);
 				lookup[_mm256_extract_epi32(indices, 1)] = _mm256_extract_epi32(vec, 1);
 				lookup[_mm256_extract_epi32(indices, 2)] = _mm256_extract_epi32(vec, 2);
@@ -183,10 +186,10 @@ namespace VectorCodec
 				lookup[_mm256_extract_epi32(indices, 5)] = _mm256_extract_epi32(vec, 5);
 				lookup[_mm256_extract_epi32(indices, 6)] = _mm256_extract_epi32(vec, 6);
 				lookup[_mm256_extract_epi32(indices, 7)] = _mm256_extract_epi32(vec, 7);
-				indices = VectorHash_AVX2(vec);
-				vec = _mm256_xor_si256(vec, xprior);
-				xprior = _mm256_i32gather_epi32(lookup, indices, 4);
-				tmp = _mm256_andnot_si256(_mm256_sub_epi32(vec, _mm256_set1_epi32(1)), vec);
+				indices = VectorHash_AVX2(vec, indices);
+				vec = _mm256_xor_si256(vec, predicted);
+				predicted = _mm256_i32gather_epi32(lookup, indices, 4);
+				__m256i tmp = _mm256_andnot_si256(_mm256_sub_epi32(vec, _mm256_set1_epi32(1)), vec);
 				__m256i tzcounts = _mm256_set1_epi32(32);
 				tzcounts = _mm256_sub_epi32(tzcounts, _mm256_andnot_si256(_mm256_cmpeq_epi32(tmp, _mm256_setzero_si256()), _mm256_set1_epi32(1)));
 				tzcounts = _mm256_sub_epi32(tzcounts, _mm256_andnot_si256(_mm256_cmpeq_epi32(_mm256_and_si256(tmp, _mm256_set1_epi32(0x0000ffff)), _mm256_setzero_si256()), _mm256_set1_epi32(16)));
@@ -195,6 +198,16 @@ namespace VectorCodec
 				tzcounts = _mm256_sub_epi32(tzcounts, _mm256_andnot_si256(_mm256_cmpeq_epi32(_mm256_and_si256(tmp, _mm256_set1_epi32(0x33333333)), _mm256_setzero_si256()), _mm256_set1_epi32(2)));
 				tzcounts = _mm256_sub_epi32(tzcounts, _mm256_andnot_si256(_mm256_cmpeq_epi32(_mm256_and_si256(tmp, _mm256_set1_epi32(0x55555555)), _mm256_setzero_si256()), _mm256_set1_epi32(1)));
 				tzcounts = _mm256_srli_epi32(tzcounts, 3);
+#ifdef VECTOR_CODEC_SAMPLER
+				++sampled_ctz[_mm256_extract_epi32(tzcounts, 0)];
+				++sampled_ctz[_mm256_extract_epi32(tzcounts, 1)];
+				++sampled_ctz[_mm256_extract_epi32(tzcounts, 2)];
+				++sampled_ctz[_mm256_extract_epi32(tzcounts, 3)];
+				++sampled_ctz[_mm256_extract_epi32(tzcounts, 4)];
+				++sampled_ctz[_mm256_extract_epi32(tzcounts, 5)];
+				++sampled_ctz[_mm256_extract_epi32(tzcounts, 6)];
+				++sampled_ctz[_mm256_extract_epi32(tzcounts, 7)];
+#endif
 				tzcounts = _mm256_sub_epi32(tzcounts, _mm256_srli_epi32(tzcounts, 2));
 				vec = _mm256_srlv_epi32(vec, _mm256_slli_epi32(tzcounts, 3));
 				__m256i lzcounts = _mm256_srli_epi32(_mm256_set_epi32(
@@ -202,6 +215,16 @@ namespace VectorCodec
 					VECTOR_CODEC_CLZ(_mm256_extract_epi32(vec, 5)), VECTOR_CODEC_CLZ(_mm256_extract_epi32(vec, 4)),
 					VECTOR_CODEC_CLZ(_mm256_extract_epi32(vec, 3)), VECTOR_CODEC_CLZ(_mm256_extract_epi32(vec, 2)),
 					VECTOR_CODEC_CLZ(_mm256_extract_epi32(vec, 1)), VECTOR_CODEC_CLZ(_mm256_extract_epi32(vec, 0))), 3);
+#ifdef VECTOR_CODEC_SAMPLER
+				++sampled_clz[_mm256_extract_epi32(lzcounts, 0)];
+				++sampled_clz[_mm256_extract_epi32(lzcounts, 1)];
+				++sampled_clz[_mm256_extract_epi32(lzcounts, 2)];
+				++sampled_clz[_mm256_extract_epi32(lzcounts, 3)];
+				++sampled_clz[_mm256_extract_epi32(lzcounts, 4)];
+				++sampled_clz[_mm256_extract_epi32(lzcounts, 5)];
+				++sampled_clz[_mm256_extract_epi32(lzcounts, 6)];
+				++sampled_clz[_mm256_extract_epi32(lzcounts, 7)];
+#endif
 				tmp = _mm256_sub_epi32(_mm256_set1_epi32(4), _mm256_sub_epi32(lzcounts, _mm256_and_si256(_mm256_set1_epi32(1), _mm256_cmpeq_epi32(lzcounts, _mm256_set1_epi32(3)))));
 				lzcounts = _mm256_sub_epi32(lzcounts, _mm256_and_si256(_mm256_set1_epi32(1), _mm256_cmpgt_epi32(lzcounts, _mm256_set1_epi32(2))));
 				*(uint32_t*)out = VECTOR_CODEC_BSWAP_IF_BE(_mm256_extract_epi32(vec, 0)); out += _mm256_extract_epi32(tmp, 0);
@@ -212,6 +235,10 @@ namespace VectorCodec
 				*(uint32_t*)out = VECTOR_CODEC_BSWAP_IF_BE(_mm256_extract_epi32(vec, 5)); out += _mm256_extract_epi32(tmp, 5);
 				*(uint32_t*)out = VECTOR_CODEC_BSWAP_IF_BE(_mm256_extract_epi32(vec, 6)); out += _mm256_extract_epi32(tmp, 6);
 				*(uint32_t*)out = VECTOR_CODEC_BSWAP_IF_BE(_mm256_extract_epi32(vec, 7)); out += _mm256_extract_epi32(tmp, 7);
+#ifdef VECTOR_CODEC_EARLY_EXIT
+				VECTOR_CODEC_UNLIKELY_IF(out - out_begin > value_count * 4)
+					return 0;
+#endif
 				lzcounts = _mm256_sllv_epi32(lzcounts, _mm256_set_epi32(14, 12, 10, 8, 6, 4, 2, 0));
 				tzcounts = _mm256_sllv_epi32(tzcounts, _mm256_set_epi32(30, 28, 26, 24, 22, 20, 18, 16));
 				lzcounts = _mm256_or_si256(lzcounts, tzcounts);
@@ -229,10 +256,10 @@ namespace VectorCodec
 		VECTOR_CODEC_INLINE_ALWAYS
 		static void Decode_AVX2(const uint8_t* VECTOR_CODEC_RESTRICT data, size_t value_count, float* VECTOR_CODEC_RESTRICT out) noexcept
 		{
-			alignas(32) int32_t lookup[Params::LookupSize] = {};
+			alignas(32) int32_t lookup[LookupSize] = {};
 			const uint32_t* in_headers = (const uint32_t*)data;
-			__m256i indices, xprior;
-			xprior = indices = _mm256_setzero_si256();
+			__m256i indices, predicted;
+			indices = predicted = _mm256_setzero_si256();
 			data += ((value_count + 7) & ~7) / 2;
 			while (true)
 			{
@@ -247,8 +274,8 @@ namespace VectorCodec
 				__m256i vec = _mm256_i32gather_epi32((const int*)data, _mm256_cvtepi16_epi32(_mm_slli_si128(prefix_sum, 2)), 1);
 				data += _mm_extract_epi16(prefix_sum, 7);
 				vec = _mm256_and_si256(vec, _mm256_sub_epi32(_mm256_sllv_epi32(_mm256_set1_epi32(1), _mm256_slli_epi32(_mm256_cvtepi16_epi32(lzcounts), 3)), _mm256_set1_epi32(1)));
-				tmp = _mm256_and_si256(_mm256_srlv_epi32(_mm256_set1_epi32(header), _mm256_set_epi32(30, 28, 26, 24, 22, 20, 18, 16)), _mm256_set1_epi32(3));
-				vec = _mm256_xor_si256(_mm256_sllv_epi32(vec, _mm256_slli_epi32(tmp, 3)), xprior);
+				tmp = _mm256_slli_epi32(_mm256_and_si256(_mm256_srlv_epi32(_mm256_set1_epi32(header), _mm256_set_epi32(30, 28, 26, 24, 22, 20, 18, 16)), _mm256_set1_epi32(3)), 3);
+				vec = _mm256_xor_si256(_mm256_sllv_epi32(vec, tmp), predicted);
 				lookup[_mm256_extract_epi32(indices, 0)] = _mm256_extract_epi32(vec, 0);
 				lookup[_mm256_extract_epi32(indices, 1)] = _mm256_extract_epi32(vec, 1);
 				lookup[_mm256_extract_epi32(indices, 2)] = _mm256_extract_epi32(vec, 2);
@@ -257,8 +284,8 @@ namespace VectorCodec
 				lookup[_mm256_extract_epi32(indices, 5)] = _mm256_extract_epi32(vec, 5);
 				lookup[_mm256_extract_epi32(indices, 6)] = _mm256_extract_epi32(vec, 6);
 				lookup[_mm256_extract_epi32(indices, 7)] = _mm256_extract_epi32(vec, 7);
-				indices = VectorHash_AVX2(vec);
-				xprior = _mm256_i32gather_epi32(lookup, indices, 4);
+				indices = VectorHash_AVX2(vec, indices);
+				predicted = _mm256_i32gather_epi32(lookup, indices, 4);
 				VECTOR_CODEC_UNLIKELY_IF(value_count < 8)
 				{
 					VECTOR_CODEC_UNLIKELY_IF(value_count != 0)
@@ -318,6 +345,10 @@ namespace VectorCodec
 				*(uint32_t*)out = VECTOR_CODEC_BSWAP_IF_BE(_mm256_extract_epi32(vec, 5)); out += _mm256_extract_epi32(tmp, 5);
 				*(uint32_t*)out = VECTOR_CODEC_BSWAP_IF_BE(_mm256_extract_epi32(vec, 6)); out += _mm256_extract_epi32(tmp, 6);
 				*(uint32_t*)out = VECTOR_CODEC_BSWAP_IF_BE(_mm256_extract_epi32(vec, 7)); out += _mm256_extract_epi32(tmp, 7);
+#ifdef VECTOR_CODEC_EARLY_EXIT
+				VECTOR_CODEC_UNLIKELY_IF(out - out_begin > value_count * 4)
+					return 0;
+#endif
 				lzcounts = _mm256_sllv_epi32(lzcounts, _mm256_set_epi32(14, 12, 10, 8, 6, 4, 2, 0));
 				tzcounts = _mm256_sllv_epi32(tzcounts, _mm256_set_epi32(30, 28, 26, 24, 22, 20, 18, 16));
 				lzcounts = _mm256_or_si256(lzcounts, tzcounts);
@@ -351,8 +382,8 @@ namespace VectorCodec
 				__m256i vec = _mm256_i32gather_epi32((const int*)data, _mm256_cvtepi16_epi32(_mm_slli_si128(prefix_sum, 2)), 1);
 				data += _mm_extract_epi16(prefix_sum, 7);
 				vec = _mm256_and_si256(vec, _mm256_sub_epi32(_mm256_sllv_epi32(_mm256_set1_epi32(1), _mm256_slli_epi32(_mm256_cvtepi16_epi32(lzcounts), 3)), _mm256_set1_epi32(1)));
-				tmp = _mm256_and_si256(_mm256_srlv_epi32(_mm256_set1_epi32(header), _mm256_set_epi32(30, 28, 26, 24, 22, 20, 18, 16)), _mm256_set1_epi32(3));
-				vec = _mm256_sllv_epi32(vec, _mm256_slli_epi32(tmp, 3));
+				tmp = _mm256_slli_epi32(_mm256_and_si256(_mm256_srlv_epi32(_mm256_set1_epi32(header), _mm256_set_epi32(30, 28, 26, 24, 22, 20, 18, 16)), _mm256_set1_epi32(3)), 3);
+				vec = _mm256_sllv_epi32(vec, tmp);
 				vec = _mm256_add_epi32(vec, prior);
 				VECTOR_CODEC_UNLIKELY_IF(value_count < 8)
 				{
