@@ -1,6 +1,6 @@
 # VectorCodec
 ### About
-VectorCodec is a lossless compression algorithm for arrays of single-precision floating point values with a focus on speed. It is heavily based on FPC, another fast float compressor.  
+VectorCodec is a lossless compression algorithm for arrays of single-precision floating point values with a focus on speed. It is heavily based on FPC, another fast compression algorithm for arrays of doubles.  
 The current implementation is a ~400 LOC, STB-style header-only library and it (over)uses AVX2 intrinsics. Support for other architectures will be added in the future.
 ### API
 ```cpp
