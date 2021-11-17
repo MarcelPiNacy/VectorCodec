@@ -147,11 +147,6 @@ namespace VectorCodec
 	{
 		constexpr uint32_t LookupSize = 128;
 
-#ifdef VECTOR_CODEC_SAMPLER
-		static size_t sampled_ctz[4];
-		static size_t sampled_clz[4];
-#endif
-
 		VECTOR_CODEC_INLINE_ALWAYS static
 		__m256i VectorHash_AVX2(__m256i v, __m256i i) noexcept
 		{
@@ -198,16 +193,6 @@ namespace VectorCodec
 				tzcounts = _mm256_sub_epi32(tzcounts, _mm256_andnot_si256(_mm256_cmpeq_epi32(_mm256_and_si256(tmp, _mm256_set1_epi32(0x33333333)), _mm256_setzero_si256()), _mm256_set1_epi32(2)));
 				tzcounts = _mm256_sub_epi32(tzcounts, _mm256_andnot_si256(_mm256_cmpeq_epi32(_mm256_and_si256(tmp, _mm256_set1_epi32(0x55555555)), _mm256_setzero_si256()), _mm256_set1_epi32(1)));
 				tzcounts = _mm256_srli_epi32(tzcounts, 3);
-#ifdef VECTOR_CODEC_SAMPLER
-				++sampled_ctz[_mm256_extract_epi32(tzcounts, 0)];
-				++sampled_ctz[_mm256_extract_epi32(tzcounts, 1)];
-				++sampled_ctz[_mm256_extract_epi32(tzcounts, 2)];
-				++sampled_ctz[_mm256_extract_epi32(tzcounts, 3)];
-				++sampled_ctz[_mm256_extract_epi32(tzcounts, 4)];
-				++sampled_ctz[_mm256_extract_epi32(tzcounts, 5)];
-				++sampled_ctz[_mm256_extract_epi32(tzcounts, 6)];
-				++sampled_ctz[_mm256_extract_epi32(tzcounts, 7)];
-#endif
 				tzcounts = _mm256_sub_epi32(tzcounts, _mm256_srli_epi32(tzcounts, 2));
 				vec = _mm256_srlv_epi32(vec, _mm256_slli_epi32(tzcounts, 3));
 				__m256i lzcounts = _mm256_srli_epi32(_mm256_set_epi32(
@@ -215,16 +200,6 @@ namespace VectorCodec
 					VECTOR_CODEC_CLZ(_mm256_extract_epi32(vec, 5)), VECTOR_CODEC_CLZ(_mm256_extract_epi32(vec, 4)),
 					VECTOR_CODEC_CLZ(_mm256_extract_epi32(vec, 3)), VECTOR_CODEC_CLZ(_mm256_extract_epi32(vec, 2)),
 					VECTOR_CODEC_CLZ(_mm256_extract_epi32(vec, 1)), VECTOR_CODEC_CLZ(_mm256_extract_epi32(vec, 0))), 3);
-#ifdef VECTOR_CODEC_SAMPLER
-				++sampled_clz[_mm256_extract_epi32(lzcounts, 0)];
-				++sampled_clz[_mm256_extract_epi32(lzcounts, 1)];
-				++sampled_clz[_mm256_extract_epi32(lzcounts, 2)];
-				++sampled_clz[_mm256_extract_epi32(lzcounts, 3)];
-				++sampled_clz[_mm256_extract_epi32(lzcounts, 4)];
-				++sampled_clz[_mm256_extract_epi32(lzcounts, 5)];
-				++sampled_clz[_mm256_extract_epi32(lzcounts, 6)];
-				++sampled_clz[_mm256_extract_epi32(lzcounts, 7)];
-#endif
 				tmp = _mm256_sub_epi32(_mm256_set1_epi32(4), _mm256_sub_epi32(lzcounts, _mm256_and_si256(_mm256_set1_epi32(1), _mm256_cmpeq_epi32(lzcounts, _mm256_set1_epi32(3)))));
 				lzcounts = _mm256_sub_epi32(lzcounts, _mm256_and_si256(_mm256_set1_epi32(1), _mm256_cmpgt_epi32(lzcounts, _mm256_set1_epi32(2))));
 				*(uint32_t*)out = VECTOR_CODEC_BSWAP_IF_BE(_mm256_extract_epi32(vec, 0)); out += _mm256_extract_epi32(tmp, 0);
